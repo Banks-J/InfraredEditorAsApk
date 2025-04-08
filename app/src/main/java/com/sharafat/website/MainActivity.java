@@ -6,6 +6,10 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.util.Base64;
+import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -16,6 +20,7 @@ import android.graphics.Bitmap;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -23,6 +28,12 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -46,6 +57,9 @@ public class MainActivity extends AppCompatActivity {
         WebSettings webSettings = webView.getSettings();
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
+
+        // ✅ Add JavaScript bridge for saving image
+        webView.addJavascriptInterface(new JavaScriptBridge(this), "AndroidInterface");
 
         webView.loadUrl(getString(R.string.website_url));
 
@@ -84,7 +98,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // ✅ Add WebChromeClient to handle file chooser
+        // ✅ File picker for <input type="file">
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView webView,
@@ -105,9 +119,25 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
         });
+
+        // ✅ Download listener (ignores blob/data URLs)
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            if (url.startsWith("blob:") || url.startsWith("data:")) {
+                // Let the JS handle it inside the page
+                return;
+            }
+
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(Uri.parse(url));
+                startActivity(intent);
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(MainActivity.this, "No app found to handle the download.", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
-    // Handle result of file picker
+    // ✅ File picker result
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILECHOOSER_RESULTCODE) {
@@ -133,6 +163,45 @@ public class MainActivity extends AppCompatActivity {
             webView.goBack();
         } else {
             super.onBackPressed();
+        }
+    }
+
+    // ✅ JavaScript bridge to save image to Downloads
+    public class JavaScriptBridge {
+        private final Activity activity;
+
+        public JavaScriptBridge(Activity activity) {
+            this.activity = activity;
+        }
+
+        @JavascriptInterface
+        public void saveImage(String base64DataUrl, String filename) {
+            activity.runOnUiThread(() -> {
+                try {
+                    Pattern pattern = Pattern.compile("data:image/(.*?);base64,(.*)");
+                    Matcher matcher = pattern.matcher(base64DataUrl);
+                    if (!matcher.matches()) {
+                        Toast.makeText(activity, "Invalid image data", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    String base64Data = matcher.group(2);
+                    byte[] imageBytes = Base64.decode(base64Data, Base64.DEFAULT);
+
+                    File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!downloadsDir.exists()) downloadsDir.mkdirs();
+
+                    File outFile = new File(downloadsDir, filename);
+                    OutputStream os = new FileOutputStream(outFile);
+                    os.write(imageBytes);
+                    os.close();
+
+                    Toast.makeText(activity, "Image saved to Downloads", Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    Toast.makeText(activity, "Failed to save image: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    e.printStackTrace();
+                }
+            });
         }
     }
 }
