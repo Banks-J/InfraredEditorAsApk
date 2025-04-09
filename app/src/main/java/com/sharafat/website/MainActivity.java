@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -58,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
 
-        // ✅ Add JavaScript bridge for saving image
+        // Add JavaScript bridge for saving image
         webView.addJavascriptInterface(new JavaScriptBridge(this), "AndroidInterface");
 
         webView.loadUrl(getString(R.string.website_url));
@@ -98,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // ✅ File picker for <input type="file">
+        // File picker for <input type="file">
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView webView,
@@ -120,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // ✅ Download listener (ignores blob/data URLs)
+        // Download listener (ignores blob/data URLs)
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             if (url.startsWith("blob:") || url.startsWith("data:")) {
                 // Let the JS handle it inside the page
@@ -137,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // ✅ File picker result
+    // File picker result
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILECHOOSER_RESULTCODE) {
@@ -166,7 +167,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ✅ JavaScript bridge to save image to Downloads
+    // JavaScript bridge to save image to Downloads
     public class JavaScriptBridge {
         private final Activity activity;
 
@@ -188,13 +189,23 @@ public class MainActivity extends AppCompatActivity {
                     String base64Data = matcher.group(2);
                     byte[] imageBytes = Base64.decode(base64Data, Base64.DEFAULT);
 
-                    File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    File downloadsDir = Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_DOWNLOADS
+                    );
                     if (!downloadsDir.exists()) downloadsDir.mkdirs();
 
                     File outFile = new File(downloadsDir, filename);
                     OutputStream os = new FileOutputStream(outFile);
                     os.write(imageBytes);
                     os.close();
+
+                    // Notify system so it appears right away
+                    MediaScannerConnection.scanFile(
+                            activity,
+                            new String[]{ outFile.getAbsolutePath() },
+                            null,
+                            null
+                    );
 
                     Toast.makeText(activity, "Image saved to Downloads", Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
